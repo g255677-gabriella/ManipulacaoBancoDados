@@ -1,0 +1,132 @@
+---
+title: "Desafio08ME315"
+author: "Gabriella de Oliveira Argenton 255677"
+date: "`r format(Sys.time(), '%d/%m/%Y %H:%M:%S')`"
+format: pdf
+---
+1
+```{r}
+library(RSQLite)
+
+# caminho relativo (mesma pasta do projeto)
+db_file <- file.path("dados", "database.sqlite3")
+
+conn <- dbConnect(SQLite(), dbname = db_file)
+
+# conferir tabelas
+dbListTables(conn)
+
+```
+
+2
+```{r}
+# Professores de STAT via nome do oferecimento (ex.: "STAT 302 ...")
+sql_prof_stat_fallback <- "
+WITH stat_sections AS (
+  SELECT sec.uuid AS section_uuid
+  FROM course_offerings co
+  JOIN sections sec ON sec.course_offering_uuid = co.uuid
+  WHERE UPPER(co.name) LIKE 'STAT %'   -- <- chave do fallback
+)
+SELECT DISTINCT i.name AS professor
+FROM stat_sections ss
+JOIN teachings t   ON t.section_uuid = ss.section_uuid
+JOIN instructors i ON i.id          = t.instructor_id
+WHERE i.name IS NOT NULL AND TRIM(i.name) <> ''
+ORDER BY i.name;
+"
+
+prof_stat <- dbGetQuery(conn, sql_prof_stat_fallback)
+n_prof <- nrow(prof_stat)
+cat("Número de professores que lecionaram STAT:", n_prof, "\n")
+print(prof_stat)
+
+```
+
+
+3
+```{r}
+sql_resumo <- "
+WITH grade_points(letter, pts) AS (
+  VALUES ('A',4.0), ('AB',3.5), ('B',3.0), ('BC',2.5), ('C',2.0), ('D',1.0), ('F',0.0)
+),
+stat_offerings AS (
+  SELECT co.uuid AS course_offering_uuid, co.name AS offering_name
+  FROM course_offerings co
+  WHERE UPPER(co.name) LIKE 'STAT %'
+),
+-- notas em formato longo (converte TEXT -> INTEGER; ignora conceitos não numéricos)
+long_counts AS (
+  SELECT gd.course_offering_uuid, gd.section_number, 'A'  AS letter, CAST(NULLIF(TRIM(gd.a_count ), '') AS INTEGER) AS n FROM grade_distributions gd
+  UNION ALL SELECT gd.course_offering_uuid, gd.section_number, 'AB', CAST(NULLIF(TRIM(gd.ab_count), '') AS INTEGER) FROM grade_distributions gd
+  UNION ALL SELECT gd.course_offering_uuid, gd.section_number, 'B' , CAST(NULLIF(TRIM(gd.b_count ), '') AS INTEGER) FROM grade_distributions gd
+  UNION ALL SELECT gd.course_offering_uuid, gd.section_number, 'BC', CAST(NULLIF(TRIM(gd.bc_count), '') AS INTEGER) FROM grade_distributions gd
+  UNION ALL SELECT gd.course_offering_uuid, gd.section_number, 'C' , CAST(NULLIF(TRIM(gd.c_count ), '') AS INTEGER) FROM grade_distributions gd
+  UNION ALL SELECT gd.course_offering_uuid, gd.section_number, 'D' , CAST(NULLIF(TRIM(gd.d_count ), '') AS INTEGER) FROM grade_distributions gd
+  UNION ALL SELECT gd.course_offering_uuid, gd.section_number, 'F' , CAST(NULLIF(TRIM(gd.f_count ), '') AS INTEGER) FROM grade_distributions gd
+),
+-- GPA por seção STAT (só se houver alunos em A..F)
+gpa_section AS (
+  SELECT s.uuid AS section_uuid,
+         so.offering_name,
+         SUM(gp.pts * COALESCE(lc.n,0)) * 1.0 / SUM(COALESCE(lc.n,0)) AS gpa,
+         SUM(COALESCE(lc.n,0)) AS total_n
+  FROM long_counts lc
+  JOIN grade_points gp ON gp.letter = lc.letter
+  JOIN sections s
+    ON s.course_offering_uuid = lc.course_offering_uuid
+   AND s.number               = lc.section_number
+  JOIN stat_offerings so ON so.course_offering_uuid = lc.course_offering_uuid
+  GROUP BY s.uuid
+  HAVING SUM(COALESCE(lc.n,0)) > 0
+),
+-- GPA médio por professor (STAT)
+/* adicione HAVING COUNT(*) >= 3 para exigir mínimo de seções, se quiser */
+prof_gpa AS (
+  SELECT i.name AS professor,
+         AVG(gs.gpa) AS gpa_media,
+         COUNT(*)    AS n_sections
+  FROM gpa_section gs
+  JOIN teachings t   ON t.section_uuid = gs.section_uuid
+  JOIN instructors i ON i.id          = t.instructor_id
+  WHERE i.name IS NOT NULL AND TRIM(i.name) <> ''
+  GROUP BY i.name
+),
+-- GPA médio por disciplina (STAT) usando o nome do offering
+disc_gpa AS (
+  SELECT gs.offering_name AS disciplina,
+         AVG(gs.gpa) AS gpa_media,
+         COUNT(*)    AS n_sections
+  FROM gpa_section gs
+  GROUP BY gs.offering_name
+)
+-- quatro respostas em um resultado só (4 linhas)
+SELECT 'prof_mais_dificil' AS tipo, professor AS nome, gpa_media, n_sections
+FROM ( SELECT professor, gpa_media, n_sections FROM prof_gpa ORDER BY gpa_media ASC,  n_sections DESC LIMIT 1 )
+UNION ALL
+SELECT 'prof_mais_facil', professor, gpa_media, n_sections
+FROM ( SELECT professor, gpa_media, n_sections FROM prof_gpa ORDER BY gpa_media DESC, n_sections DESC LIMIT 1 )
+UNION ALL
+SELECT 'disc_mais_dificil', disciplina, gpa_media, n_sections
+FROM ( SELECT disciplina, gpa_media, n_sections FROM disc_gpa ORDER BY gpa_media ASC,  n_sections DESC LIMIT 1 )
+UNION ALL
+SELECT 'disc_mais_facil', disciplina, gpa_media, n_sections
+FROM ( SELECT disciplina, gpa_media, n_sections FROM disc_gpa ORDER BY gpa_media DESC, n_sections DESC LIMIT 1 );
+"
+
+resumo <- dbGetQuery(conn, sql_resumo)
+resumo
+
+```
+
+
+4
+```{r}
+dbDisconnect(conn)
+
+```
+
+```{r}
+cat("Relatório gerado em:", format(Sys.time(), "%d/%m/%Y %H:%M:%S"))
+
+```
