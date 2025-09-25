@@ -1,0 +1,36 @@
+---
+title: "Desafio 3"
+author: "Gabriella de Oliveira Argenton 255677"
+format: pdf
+---
+
+```{r setup, include=FALSE}
+library(jsonlite)
+library(arrow)
+```
+
+```{r}
+# JSON -------------------------
+
+df_json <- fromJSON("dados.json")
+df_json <- as.data.frame(df_json)
+
+print(df_json)
+
+```
+
+```{r}
+
+# 1) Ler o JSON
+df <- fromJSON("dados.json")
+df <- as.data.frame(df)   # garantir que é data.frame
+# 2) Conferir se veio certo
+print(df)
+str(df)
+# 3) Salvar em Parquet
+write_parquet(df, "dados.parquet")
+# 4) Ler de volta
+df_parquet <- read_parquet("dados.parquet")
+print(df_parquet)
+
+```

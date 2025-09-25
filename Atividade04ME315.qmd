@@ -1,0 +1,124 @@
+---
+title: "Atividade04ME315"
+author: "Gabriella de Oliveira Argenton 255677"
+format: html
+---
+
+## Você deverá desenvolver código em R, utilizando-se de tidyverse, ggplot, leaftlet, ggcal e outros pacotes disponibilizados em HTML Widgets para responder uma questão relacionada ao conjunto de dados flights. Para tanto, considere os seguintes fatos: \* Cias Aéreas (AIRLINE) possuem diferentes aeronaves (codificadas em TAIL_NUMBER); \* (Exemplo hipotético) No dia 01/01/2015, a aeronave N431WN viaja de BWI para JFK; \* (Exemplo hipotético) No dia 02/01/2015, a aeronave N431WN viaja de JFK para ORD‘; \* E assim sucessivamente. . . No caso apontado acima, pode-se ver que a aeronave N431WN realizou um trajeto (provavelmente único) durante todo o ano de 2015. Nos dias exemplificados, o trajeto foi BWI-JFK-ORD. Parte 1: Crie uma função que: 
+
+## a. Receba um valor de TAIL_NUMBER (por exemplo, N431WN); 
+
+## b. Produza uma tabela (tidy) com todos os trajetos realizados pela aeronave (ordenadas por data e hora, contendo todas as colunas do arquivo flights.csv.zip); 
+
+## c. Produza um mapa que apresente todo o trajeto voado pela aeronave ao longo de todo o ano; o trajeto deve ser apresentado de maneira linear no tempo (i.e., segue a sequência do tempo, como no exemplo hipotético dado acima); 
+
+## d. O mapa deve ser decorado com estatísticas do seu interesse (por exemplo, velocidade média do vôo como espessura da linha que conecta os aeroportos envolvidos no trajeto).
+
+```{r setup}
+# Configurações globais
+knitr::opts_chunk$set(
+  warning = FALSE,  # não mostrar warnings
+  message = FALSE,  # não mostrar mensagens de carregamento
+  echo    = TRUE    # mostrar o código (mude para FALSE se quiser esconder)
+)
+
+# Carregar pacotes usados no trabalho
+library(readr)
+library(dplyr)
+library(stringr)
+library(leaflet)
+```
+
+```{r}
+
+# Caminhos (ajuste para onde você extraiu o archive.zip)
+flights_path  <- "flights.csv"
+airports_path <- "airports.csv"
+
+# Leitura das tabelas necessárias
+airports <- read_csv(
+  airports_path,
+  col_select = c(IATA_CODE, AIRPORT, CITY, STATE, LATITUDE, LONGITUDE),
+  show_col_types = FALSE
+)
+
+
+# Função pedida
+trajeto_aeronave <- function(tail) {
+  
+  # Ler apenas as colunas relevantes do flights
+  flights <- read_csv(
+    flights_path,
+    col_select = c(YEAR, MONTH, DAY, DAY_OF_WEEK,
+                   AIRLINE, FLIGHT_NUMBER, TAIL_NUMBER,
+                   ORIGIN_AIRPORT, DESTINATION_AIRPORT,
+                   DEPARTURE_TIME, ARRIVAL_TIME, ARRIVAL_DELAY),
+    show_col_types = FALSE
+  )
+  
+  # Filtrar pelo tail_number e ordenar cronologicamente
+  tabela <- flights |>
+    filter(TAIL_NUMBER == tail) |>
+    arrange(YEAR, MONTH, DAY, DEPARTURE_TIME) |>
+    # juntar info dos aeroportos origem e destino
+    left_join(airports, by = c("ORIGIN_AIRPORT" = "IATA_CODE")) |>
+    rename(orig_airport = AIRPORT, orig_city = CITY,
+           orig_state = STATE, orig_lat = LATITUDE, orig_lon = LONGITUDE) |>
+    left_join(airports, by = c("DESTINATION_AIRPORT" = "IATA_CODE")) |>
+    rename(dest_airport = AIRPORT, dest_city = CITY,
+           dest_state = STATE, dest_lat = LATITUDE, dest_lon = LONGITUDE)
+  
+  # Estatísticas agregadas (exemplo: atraso médio por aeroporto destino)
+  estatisticas <- tabela |>
+    group_by(DESTINATION_AIRPORT, dest_city, dest_state) |>
+    summarise(
+      media_atraso = mean(ARRIVAL_DELAY, na.rm = TRUE),
+      n_voos = n(),
+      .groups = "drop"
+    )
+  
+  # Construção do mapa
+  mapa <- leaflet() |>
+    addTiles() |>
+    addPolylines(
+      lng = c(rbind(tabela$orig_lon, tabela$dest_lon)),
+      lat = c(rbind(tabela$orig_lat, tabela$dest_lat)),
+      color = "blue", weight = 2, opacity = 0.6
+    ) |>
+    addCircleMarkers(
+      lng = tabela$orig_lon, lat = tabela$orig_lat,
+      popup = paste("Origem:", tabela$ORIGIN_AIRPORT),
+      radius = 3, color = "green"
+    ) |>
+    addCircleMarkers(
+      lng = tabela$dest_lon, lat = tabela$dest_lat,
+      popup = paste("Destino:", tabela$DESTINATION_AIRPORT,
+                    "<br>Média atraso:",
+                    round(tabela$ARRIVAL_DELAY, 1), "min"),
+      radius = 3, color = "red"
+    )
+  
+  # Retorna lista com tabela, estatísticas e mapa
+  list(
+    tabela_voos = tabela,
+    estatisticas = estatisticas,
+    mapa = mapa
+  )
+}
+
+
+# ==============================
+# Exemplo de uso:
+# ==============================
+res <- trajeto_aeronave("N431WN")
+
+# Visualizar tabela tidy:
+head(res$tabela_voos)
+
+# Estatísticas por aeroporto destino:
+res$estatisticas
+
+# Visualizar mapa interativo:
+res$mapa
+
+```
