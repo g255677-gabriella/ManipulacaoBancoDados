@@ -1,0 +1,128 @@
+---
+title: "Manipulação de Banco de Dados - Julia"
+author: "Gabriella de Oliveira Argenton 255677"
+format: pdf
+---
+
+Criando um banco de dados
+
+```{julia}
+using Statistics
+using DataFrames
+using CSV
+
+# Banco de dados principal
+df = DataFrame(
+    id         = 1:8,
+    nome       = ["Ana","Bruno","Carla","Diego","Eva","Felipe","Gabi","Hugo"],
+    grupo      = ["A","A","A","B","B","B","B","A"],
+    idade      = [23, 35, 29, 41, 19, 33, 27, 30],
+    sexo       = ["F","M","F","M","F","M","F","M"],
+    renda_2023 = [2500, 4800, 3200, 6000, 1800, 4200, 3100, 3500],
+    renda_2024 = [2700, 5000, 3400, 6200, 2000, 4400, 3300, 3800]
+)
+
+# Tabela de bônus para o exemplo de left_join
+df_bonus = DataFrame(
+    id    = [2, 4, 8],
+    bonus = [500, 1000, 700]
+)
+
+```
+
+Filter
+
+```{julia}
+# Pessoas do grupo A com renda_2024 > 3500
+df_filtrado = filter(row -> row.grupo == "A" && row.renda_2024 > 3500, df)
+
+```
+
+Select
+
+```{julia}
+# Manter apenas id, nome, grupo e renda_2024
+df_select = select(df, :id, :nome, :grupo, :renda_2024)
+
+```
+
+Rename
+
+```{julia}
+# Renomear renda_2024 para renda_atual (sem alterar o original)
+df_renomeado = rename(df, :renda_2024 => :renda_atual)
+
+# Ou alterando o próprio df
+# rename!(df, :renda_2024 => :renda_atual)
+
+```
+
+Mutate
+
+```{julia}
+# Criar renda_anual_2024 e faixa_idade
+df_mut = transform(
+    df,
+    :renda_2024 => (x -> x .* 12) => :renda_anual_2024,
+    :idade      => ByRow(x -> x < 30 ? "jovem" : "adulto") => :faixa_idade
+)
+
+```
+
+Arrange
+
+```{julia}
+# Ordenar pela renda_2024 em ordem decrescente
+df_ord = sort(df, :renda_2024; rev = true)
+
+# Ordenar por grupo e idade crescente
+df_ord2 = sort(df, [:grupo, :idade])
+
+```
+
+Group_by + Summarise
+
+```{julia}
+g = groupby(df, :grupo)
+
+resumo_grupo = combine(
+    g,
+    :renda_2024 => mean => :renda_media,
+    :idade      => mean => :idade_media,
+    nrow        => :n_pessoas
+)
+```
+
+pivot_longer (Wide → Long)
+
+```{julia}
+# Deixar rendas em formato long
+df_long = stack(
+    df,
+    [:renda_2023, :renda_2024],
+    variable_name = :ano,
+    value_name    = :renda
+)
+
+
+
+```
+
+pivot_wider (Long → Wide)
+
+```{julia}
+# :id → permanece como identificador das linhas
+# :ano → vira o nome das novas colunas (ex.: renda_2023, renda_2024)
+# :renda → são os valores preenchidos nessas colunas
+# Cada ano que estava em linhas vira uma coluna nova, reorganizando a tabela.
+
+df_wide = unstack(df_long, :id, :ano, :renda)
+```
+
+left_join
+
+```{julia}
+# Juntar df com df_bonus pela coluna id
+df_left = leftjoin(df, df_bonus, on = :id)
+
+```

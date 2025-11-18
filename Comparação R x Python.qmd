@@ -1,0 +1,78 @@
+---
+title: "Comparação R x Python"
+author: "Gabriella de Oliveira Argenton 255677"
+format: pdf
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(microbenchmark)
+
+set.seed(123)
+
+n <- 1e6
+df_big <- tibble(
+  grupo = sample(c("A", "B", "C", "D"), n, replace = TRUE),
+  x     = sample(1:100,  n, replace = TRUE),
+  y     = sample(1:1000, n, replace = TRUE)
+)
+
+# Operação a ser medida
+resumo_por_grupo <- function(df) {
+  df |>
+    group_by(grupo) |>
+    summarise(y_media = mean(y), .groups = "drop")
+}
+
+# Teste simples
+resumo_por_grupo(df_big)
+
+# Benchmark
+mb <- microbenchmark(
+  resumo_por_grupo(df_big),
+  times = 10
+)
+
+mb
+summary(mb)
+
+```
+
+```{python}
+import numpy as np
+import pandas as pd
+import timeit
+
+np.random.seed(123)
+
+n = 1_000_000
+df_big = pd.DataFrame({
+    "grupo": np.random.choice(["A","B","C","D"], size=n),
+    "x": np.random.randint(1, 101, size=n),
+    "y": np.random.randint(1, 1001, size=n)
+})
+
+def resumo_por_grupo(df):
+    return (
+        df
+        .groupby("grupo", as_index=False)
+        ["y"]
+        .mean()
+        .rename(columns={"y": "y_media"})
+    )
+
+# Teste simples
+print(resumo_por_grupo(df_big))
+
+# Benchmark: executa 10 vezes e mede o tempo total
+tempo = timeit.timeit(
+    stmt="resumo_por_grupo(df_big)",
+    globals=globals(),
+    number=10
+)
+
+print("Tempo total para 10 execuções (Python):", tempo, "segundos")
+print("Tempo médio por execução:", tempo/10, "segundos")
+
+```
