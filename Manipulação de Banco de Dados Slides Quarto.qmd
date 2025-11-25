@@ -1,0 +1,233 @@
+---
+---
+title: "Manipulação de Banco de Dados - Julia"
+subtitle: "Comparação com R e Python (ergonomia e tempo de execução)"
+author: "Gabriella de Oliveira Argenton 255677"
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    code-copy: true
+    code-overflow: wrap
+    highlight-style: github
+execute:
+  echo: true
+  warning: false
+  message: false
+engine: knitr
+---
+
+##  Agenda
+
+\- Leitura de dados
+
+\- Seleção & filtragem
+
+\- Agrupamento & sumarização
+
+\- Pivot (wide/long)
+
+\- Joins
+
+\- Escrita (I/O)
+
+\- Comparação com R e Python: ergonomia & tempo
+
+------------------------------------------------------------------------
+
+##  Preparação (R) — habilitar Python e Julia
+
+```{r}
+# Python via reticulate 
+reticulate::use_python("C:/Path/para/python.exe", required = FALSE)
+
+
+library(JuliaCall)
+JuliaCall::julia_setup()  
+
+```
+
+##  Instalar/Carregar pacotes na Julia
+
+```{julia}
+using Pkg
+
+Pkg.add(["DataFrames","CSV","RDatasets","BenchmarkTools","Statistics"])
+
+using DataFrames, CSV, RDatasets, BenchmarkTools, Statistics
+```
+
+##  Leitura de dados (Julia)
+
+```{julia}
+# Usarei o iris do RDatasets para padronizar entre linguagens
+iris = dataset("datasets", "iris")
+first(iris, 5)
+
+```
+
+##  Seleção & Filtragem (Julia)
+
+```{julia}
+# Selecionar colunas e filtrar linhas
+subset_iris = select(iris, [:SepalLength, :SepalWidth, :Species])
+filtered = subset(subset_iris, :SepalLength => x -> x .> 5.5)
+first(filtered, 5)
+
+```
+
+##  Agrupamento & Sumarização (Julia)
+
+```{julia}
+by_species = combine(groupby(iris, :Species),
+:SepalLength => mean => :SepalLength_mean,
+:SepalWidth => mean => :SepalWidth_mean)
+by_species
+```
+
+##  Pivot (wide/long) (Julia)
+
+```{julia}
+long = stack(iris, [:SepalLength,:SepalWidth], variable_name=:Measure, value_name=:Value)
+first(long, 5)
+
+
+wide = unstack(long, :Species, :Measure, :Value, allowduplicates=true)
+first(wide, 5)
+```
+
+##  Join (Julia)
+
+```{julia}
+# Exemplo didático: criar duas tabelas e fazer join
+left = DataFrame(ID = 1:5, x = rand(5))
+right = DataFrame(ID = 3:7, y = rand(5))
+inner = innerjoin(left, right, on=:ID)
+inner
+```
+
+##  Escrita (I/O) (Julia)
+
+```{julia}
+CSV.write("saida_iris.csv", iris)
+# Arquivo gravado no diretório de trabalho
+```
+
+##  O mesmo com **R** (ergonomia)
+
+```{r}
+library(dplyr)
+# Base iris do R
+r_iris <- iris
+r_filtered <- r_iris |>
+select(Sepal.Length, Sepal.Width, Species) |>
+filter(Sepal.Length > 5.5)
+head(r_filtered, 5)
+
+
+r_by_species <- r_iris |>
+group_by(Species) |>
+summarise(SepalLength_mean = mean(Sepal.Length),
+SepalWidth_mean = mean(Sepal.Width))
+r_by_species
+```
+
+##  O mesmo com **Python** (ergonomia)
+
+```{python}
+import pandas as pd
+from sklearn.datasets import load_iris
+
+
+data = load_iris(as_frame=True)
+py_iris = data.frame
+py_iris["Species"] = py_iris["target"].map(lambda i: data.target_names[i])
+
+
+# Seleção & filtragem
+py_filtered = py_iris.loc[py_iris["sepal length (cm)"] > 5.5, ["sepal length (cm)","sepal width (cm)","Species"]]
+py_filtered.head()
+
+
+# Agrupamento & sumarização
+py_by_species = (py_iris
+.groupby("Species", as_index=False)
+.agg(SepalLength_mean=("sepal length (cm)","mean"),
+SepalWidth_mean=("sepal width (cm)","mean")))
+py_by_species
+```
+
+##  Benchmark: sumarização por grupo
+
+### Julia
+
+```{julia}
+@btime combine(groupby($iris, :Species), :SepalLength => mean);
+```
+
+### R
+
+```{r}
+library(microbenchmark)
+microbenchmark(
+base = aggregate(Sepal.Length ~ Species, data = iris, FUN = mean),
+dplyr = iris |> dplyr::group_by(Species) |> dplyr::summarise(SepalLength_mean = mean(Sepal.Length)),
+times = 50
+)
+```
+
+### Python
+
+```{python}
+import timeit
+py_t = timeit.timeit(
+"df.groupby('Species', as_index=False)['sepal length (cm)'].mean()",
+setup="from __main__ import py_iris as df",
+number=50
+)
+py_t
+```
+
+## Discussão: ergonomia & performance
+
+\- **ERGONOMIA**
+
+ - Julia \`DataFrames.jl\`: funções explícitas (\`select\`, \`subset\`, \`groupby\`/\`combine\`, \`stack\`/\`unstack\`); nomes de colunas como \`Symbol\`.
+
+ - R \`dplyr\`: verbos encadeados com pipe; nomes com ponto (\`Sepal.Length\`).
+
+ - Python \`pandas\`: index por rótulos; cuidado com cópia vs view; nomes com espaços.
+
+\- **PERFORMANCE**
+
+ - Benchmarks dependem do **tamanho** do dado e do **hardware**.
+
+ - Rode múltiplas vezes e reporte **medianas**/intervalos, não um único número.
+
+\- **ECOSSISTEMA**
+
+ - I/O (CSV/Parquet), joins, tipos, NA, strings/fatores, paralelismo.
+
+##  Casos úteis (para a turma)
+
+\- Consolidar várias planilhas em uma tabela única.
+
+\- Gerar indicadores por grupo (por estado, por categoria etc.).
+
+\- Juntar bases por chaves múltiplas (inner/left/full).
+
+\- Transformar wide ↔ long para relatórios.
+
+\- Exportar a tabela final para CSV.
+
+##  Referências rápidas
+
+\- **Julia DataFrames.jl**: https://dataframes.juliadata.org
+
+\- **CSV.jl**: https://csv.juliadata.org
+
+\- **R dplyr**: https://dplyr.tidyverse.org
+
+\- **Python pandas**: https://pandas.pydata.org
+
+\- **Quarto RevealJS**: https://quarto.org/docs/presentations/revealjs/
